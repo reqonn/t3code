@@ -201,6 +201,11 @@ import {
   ComposerQueuedAttachmentRow,
   ComposerRestingImagePreviews,
 } from "./ComposerAttachmentStrip";
+import {
+  ComposerDictationButton,
+  type ComposerDictationButtonHandle,
+} from "./ComposerDictationButton";
+import { isDictationSupported } from "../../voiceDictation/useVoiceDictation";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
@@ -306,6 +311,7 @@ export interface ChatComposerHandle {
   openControl: (command: KeybindingCommand) => void;
   isModelPickerOpen: () => boolean;
   isCaretAtStart: () => boolean;
+  toggleDictation: () => void;
   compactContext: () => void;
   readSnapshot: () => {
     value: string;
@@ -1048,6 +1054,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     pendingUserInputs.length === 0;
 
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
+  const dictationButtonRef = useRef<ComposerDictationButtonHandle>(null);
   const pasteAsTextShortcutUntilRef = useRef(0);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const composerSurfaceRef = useRef<HTMLDivElement>(null);
@@ -2923,6 +2930,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
       compactContext: compactThreadContextStable,
       isModelPickerOpen: () => isComposerModelPickerOpen,
+      toggleDictation: () => dictationButtonRef.current?.toggle(),
       isCaretAtStart: () => {
         const range = composerEditorRef.current?.readSelectionRange();
         return range !== undefined && range.start === 0 && range.end === 0;
@@ -3128,6 +3136,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onRemoveFile={removeComposerFileFromDraft}
       />
     ) : null;
+  const insertDictatedText = useStableCallback((text: string) => {
+    if (insertComposerText(`${text} `, "cursor", { ensureLeadingBoundary: true })) return;
+    toastManager.add({
+      type: "error",
+      title: "Couldn't insert dictated text",
+      description: text,
+    });
+  });
+  const showDictationError = useStableCallback((message: string) => {
+    toastManager.add({ type: "error", title: message });
+  });
+  const composerDictationButton = isDictationSupported() ? (
+    <ComposerDictationButton
+      key={composerDraftTargetKey}
+      ref={dictationButtonRef}
+      shortcutLabel={shortcutLabelForCommand(keybindings, "composer.dictate")}
+      onTranscript={insertDictatedText}
+      onError={showDictationError}
+    />
+  ) : null;
   const composerAttachButton = showComposerAttachAction ? (
     <ComposerAttachButton
       addComposerAttachments={addComposerAttachments}
@@ -3480,7 +3508,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   showMobilePendingAnswerActions && "hidden sm:flex",
                 )}
               >
-                {composerAttachButton ? <div className="me-2">{composerAttachButton}</div> : null}
+                {composerAttachButton || composerDictationButton ? (
+                  <div className="me-2 flex items-center gap-0.5">
+                    {composerAttachButton}
+                    {composerDictationButton}
+                  </div>
+                ) : null}
                 <div
                   data-chat-composer-actions="right"
                   data-chat-composer-transition-actions="true"

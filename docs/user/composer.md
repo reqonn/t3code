@@ -177,6 +177,18 @@ Stashes containing uploaded files must be restored in their original environment
 Those files are retained for 24 hours. After an upload expires, restore the prompt
 and use **Attach again** or remove the missing file before sending.
 
+## Voice dictation on web and desktop
+
+Click the microphone next to the attach button, or press `mod+shift+d`, to start
+recording. Click the stop button or press the shortcut again to insert the text at
+your cursor; press `Escape` to discard the recording. Recordings can be up to five
+minutes long.
+
+Transcription runs in your browser or the desktop app with a local Whisper model;
+audio never leaves your device. The first use downloads the model once: about
+200 MB when your GPU can run it, or 80 MB otherwise. Later uses work offline.
+It uses your interface language when Whisper supports it and English otherwise.
+
 ## Voice input on mobile
 
 On supported iPhones with iOS 26 or later and Android devices with Android 12 or

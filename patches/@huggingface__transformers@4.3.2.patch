@@ -1,0 +1,15 @@
+diff --git a/package.json b/package.json
+index af3cf8055b97c56dfbc0fff9760753562406ec77..943f9d4aa38b00c4b266dd4910f4c77af470b503 100644
+--- a/package.json
++++ b/package.json
+@@ -45,9 +45,7 @@
+   "dependencies": {
+     "@huggingface/jinja": "^0.5.10",
+     "@huggingface/tokenizers": "^0.2.0",
+-    "onnxruntime-node": "1.30.0",
+-    "onnxruntime-web": "1.31.0-dev.20260914-8d85527a0",
+-    "sharp": "^0.35.4"
++    "onnxruntime-web": "1.31.0-dev.20260914-8d85527a0"
+   },
+   "devDependencies": {
+     "@types/jest": "^30.0.0",
