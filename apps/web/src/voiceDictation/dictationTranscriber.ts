@@ -1,27 +1,48 @@
+import { SPEECH_SAMPLE_RATE } from "./micCapture";
 import type { DictationWorkerRequest, DictationWorkerResponse } from "./whisperProtocol";
 
-const SAMPLE_RATE = 16_000;
 // The model holds a few hundred MB once loaded; reloading from the browser cache takes seconds.
 const IDLE_WORKER_TIMEOUT_MS = 5 * 60_000;
 
 type PendingTranscription = {
   readonly resolve: (text: string) => void;
   readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
 };
+
+export type SpeechModelEvent =
+  | { readonly type: "progress"; readonly percent: number }
+  | { readonly type: "ready" }
+  | { readonly type: "failed"; readonly message: string };
 
 let worker: Worker | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 let nextRequestId = 1;
 let modelReady = false;
+let lastPercent = -1;
 const pending = new Map<number, PendingTranscription>();
-const progressListeners = new Set<(fraction: number) => void>();
+const modelListeners = new Set<(event: SpeechModelEvent) => void>();
+
+function emitModelEvent(event: SpeechModelEvent) {
+  for (const listener of modelListeners) listener(event);
+}
+
+function settle(id: number, outcome: { text: string } | { error: Error }) {
+  const request = pending.get(id);
+  if (!request) return;
+  pending.delete(id);
+  clearTimeout(request.timer);
+  if ("text" in outcome) request.resolve(outcome.text);
+  else request.reject(outcome.error);
+  if (pending.size === 0) scheduleIdleShutdown();
+}
 
 function resetWorker(error: Error) {
   worker?.terminate();
   worker = null;
   modelReady = false;
-  for (const request of pending.values()) request.reject(error);
-  pending.clear();
+  lastPercent = -1;
+  for (const id of pending.keys()) settle(id, { error });
 }
 
 function scheduleIdleShutdown() {
@@ -38,82 +59,70 @@ function ensureWorker(): Worker {
   created.addEventListener("message", (event: MessageEvent<DictationWorkerResponse>) => {
     const message = event.data;
     switch (message.type) {
-      case "progress":
-        for (const listener of progressListeners) listener(message.fraction);
-        return;
-      case "ready":
-        modelReady = true;
-        return;
-      case "result": {
-        const request = pending.get(message.id);
-        pending.delete(message.id);
-        request?.resolve(message.text);
-        if (pending.size === 0) scheduleIdleShutdown();
+      case "progress": {
+        const percent = Math.min(99, Math.floor(message.fraction * 100));
+        if (percent === lastPercent) return;
+        lastPercent = percent;
+        emitModelEvent({ type: "progress", percent });
         return;
       }
+      case "ready":
+        modelReady = true;
+        emitModelEvent({ type: "ready" });
+        return;
+      case "result":
+        settle(message.id, { text: message.text });
+        return;
       case "error": {
         const error = new Error(message.message);
-        if (message.id === null) {
-          for (const request of pending.values()) request.reject(error);
-          pending.clear();
+        if (message.id !== null) {
+          settle(message.id, { error });
           return;
         }
-        const request = pending.get(message.id);
-        pending.delete(message.id);
-        request?.reject(error);
-        if (pending.size === 0) scheduleIdleShutdown();
+        lastPercent = -1;
+        for (const id of pending.keys()) settle(id, { error });
+        emitModelEvent({ type: "failed", message: message.message });
       }
     }
   });
   created.addEventListener("error", (event) => {
-    resetWorker(new Error(event.message || "The speech model stopped unexpectedly."));
+    const message = event.message || "The speech model stopped unexpectedly.";
+    resetWorker(new Error(message));
+    emitModelEvent({ type: "failed", message });
   });
   worker = created;
   return created;
-}
-
-function post(request: DictationWorkerRequest, transfer: Transferable[] = []) {
-  ensureWorker().postMessage(request, transfer);
 }
 
 export function isSpeechModelReady(): boolean {
   return modelReady;
 }
 
-/** Starts the model download while the user is still speaking. */
+/** Starts loading (and on first use downloading) the model, usually while the user speaks. */
 export function warmUpSpeechModel(): void {
-  post({ type: "load" });
+  const message: DictationWorkerRequest = { type: "load" };
+  ensureWorker().postMessage(message, { transfer: [] });
   scheduleIdleShutdown();
 }
 
-export function subscribeToSpeechModelProgress(listener: (fraction: number) => void): () => void {
-  progressListeners.add(listener);
-  return () => progressListeners.delete(listener);
+export function subscribeToSpeechModel(listener: (event: SpeechModelEvent) => void): () => void {
+  modelListeners.add(listener);
+  return () => modelListeners.delete(listener);
 }
 
-export async function decodeRecording(recording: Blob): Promise<Float32Array> {
-  // An AudioContext at Whisper's rate makes decodeAudioData resample for us.
-  const context = new AudioContext({ sampleRate: SAMPLE_RATE });
-  try {
-    const buffer = await context.decodeAudioData(await recording.arrayBuffer());
-    if (buffer.numberOfChannels === 1) return buffer.getChannelData(0);
-    const mono = new Float32Array(buffer.length);
-    for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
-      const data = buffer.getChannelData(channel);
-      for (let index = 0; index < data.length; index += 1) {
-        mono[index] = (mono[index] ?? 0) + (data[index] ?? 0) / buffer.numberOfChannels;
-      }
-    }
-    return mono;
-  } finally {
-    void context.close();
-  }
-}
-
+/**
+ * Transcribes 16 kHz mono audio. A pass that outlives its budget restarts the worker, so a
+ * wedged GPU or runtime surfaces as an error instead of an endless spinner.
+ */
 export function transcribeAudio(audio: Float32Array): Promise<string> {
   const id = nextRequestId++;
+  const budgetMs = 30_000 + (audio.length / SPEECH_SAMPLE_RATE) * 3_000;
   return new Promise<string>((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    post({ type: "transcribe", id, audio }, [audio.buffer]);
+    const timer = setTimeout(() => {
+      resetWorker(new Error("The speech model stopped responding, so it was restarted."));
+    }, budgetMs);
+    pending.set(id, { resolve, reject, timer });
+    const message: DictationWorkerRequest = { type: "transcribe", id, audio };
+    ensureWorker().postMessage(message, { transfer: [audio.buffer] });
   });
 }

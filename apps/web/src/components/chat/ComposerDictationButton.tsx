@@ -7,72 +7,78 @@ import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface ComposerDictationButtonHandle {
-  toggle: () => void;
-  cancel: () => void;
+  toggle: (options?: { readonly holdKeyCode?: string }) => void;
 }
 
 export function ComposerDictationButton({
   ref,
   shortcutLabel,
-  onTranscript,
+  onPreview,
+  onCommit,
   onError,
 }: {
   readonly ref?: Ref<ComposerDictationButtonHandle>;
   readonly shortcutLabel: string | null;
-  readonly onTranscript: (text: string) => void;
+  readonly onPreview: (text: string) => void;
+  readonly onCommit: (text: string) => void;
   readonly onError: (message: string) => void;
 }) {
-  const dictation = useVoiceDictation({ onTranscript, onError });
-  useImperativeHandle(ref, () => ({ toggle: dictation.toggle, cancel: dictation.cancel }), [
-    dictation.toggle,
-    dictation.cancel,
-  ]);
+  const { status, toggle } = useVoiceDictation({ onPreview, onCommit, onError });
+  useImperativeHandle(ref, () => ({ toggle }), [toggle]);
 
-  const downloading =
-    dictation.modelProgress !== null
-      ? `Downloading speech model ${Math.round(dictation.modelProgress * 100)}%`
-      : null;
+  const shortcut = shortcutLabel ? ` (${shortcutLabel})` : "";
+  const loading =
+    status.modelPercent === null
+      ? null
+      : status.modelPercent > 0
+        ? `Loading speech model ${status.modelPercent}%`
+        : "Loading speech model…";
   const label =
-    dictation.phase === "recording"
-      ? "Stop dictation"
-      : dictation.phase === "transcribing"
-        ? (downloading ?? "Transcribing…")
-        : dictation.phase === "starting"
-          ? "Starting microphone…"
-          : "Dictate";
+    status.phase === "listening"
+      ? (loading ?? "Listening…")
+      : status.phase === "finishing"
+        ? (loading ?? "Finishing…")
+        : null;
   const tooltip =
-    dictation.phase === "recording"
-      ? `${downloading ? `${downloading}. ` : ""}Click to stop and insert text. Esc cancels.`
-      : label;
+    status.phase === "idle"
+      ? `Dictate${shortcut}. Hold the shortcut to talk, or press it again to stop.`
+      : status.phase === "listening"
+        ? `Stop dictation${shortcut}. Esc also stops.`
+        : status.phase === "starting"
+          ? "Starting the microphone. Click to cancel."
+          : "Finishing the last words. Click to cancel them.";
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            variant={dictation.phase === "recording" ? "destructive" : "ghost"}
-            size="icon-sm"
-            aria-label={label}
-            aria-pressed={dictation.phase === "recording"}
-            disabled={dictation.phase === "starting" || dictation.phase === "transcribing"}
-            onPointerDown={(event) => event.preventDefault()}
-            onClick={dictation.toggle}
-          />
-        }
-      >
-        {dictation.phase === "recording" ? (
-          <SquareIcon className="size-3 fill-current" />
-        ) : dictation.phase === "idle" ? (
-          <MicIcon />
-        ) : (
-          <Spinner />
-        )}
-      </TooltipTrigger>
-      <TooltipPopup>
-        {tooltip}
-        {dictation.phase === "idle" && shortcutLabel ? ` (${shortcutLabel})` : null}
-      </TooltipPopup>
-    </Tooltip>
+    <div className="flex min-w-0 items-center gap-1.5">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant={status.phase === "listening" ? "destructive" : "ghost"}
+              size="icon-sm"
+              aria-label={status.phase === "idle" ? "Dictate" : "Stop dictation"}
+              aria-pressed={status.phase !== "idle"}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() => toggle()}
+            />
+          }
+        >
+          {status.phase === "listening" ? (
+            <SquareIcon className="size-3 fill-current" />
+          ) : status.phase === "idle" ? (
+            <MicIcon />
+          ) : (
+            <Spinner />
+          )}
+        </TooltipTrigger>
+        <TooltipPopup>{tooltip}</TooltipPopup>
+      </Tooltip>
+      {label ? (
+        <span aria-live="polite" className="truncate text-muted-foreground text-xs">
+          {label}
+        </span>
+      ) : null}
+    </div>
   );
 }

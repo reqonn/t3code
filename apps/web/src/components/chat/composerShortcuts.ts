@@ -32,7 +32,7 @@ export function composerShortcutCommands(
       if (!event.repeat) branchToolbarRef.current?.openBranchPicker();
     },
     "composer.dictate": ({ event }) => {
-      if (!event.repeat) composerRef.current?.toggleDictation();
+      if (!event.repeat) composerRef.current?.toggleDictation({ holdKeyCode: event.code });
     },
     "composer.previousWorktree": ({ event }) => {
       if (!event.repeat) branchToolbarRef.current?.usePreviousWorktree();

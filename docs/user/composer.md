@@ -179,10 +179,11 @@ and use **Attach again** or remove the missing file before sending.
 
 ## Voice dictation on web and desktop
 
-Click the microphone next to the attach button, or press `mod+shift+d`, to start
-recording. Click the stop button or press the shortcut again to insert the text at
-your cursor; press `Escape` to discard the recording. Recordings can be up to five
-minutes long.
+Click the microphone next to the attach button, or press `mod+shift+d`, and start
+talking. Words appear in grey at your cursor as you speak and settle into text at each
+pause, so one undo removes the last phrase. Click the stop button, press the shortcut
+again, or press `Escape` to stop. Hold the shortcut instead to talk only while it is
+held. Dictation stops on its own after five minutes.
 
 Transcription runs in your browser or the desktop app with a local Whisper model;
 audio never leaves your device. The first use downloads the model once: about

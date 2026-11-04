@@ -140,6 +140,8 @@ export interface ComposerPromptEditorHandle {
     contextIds: string[];
   };
   isCaretOnVisualEdge: (edge: "start" | "end") => boolean;
+  /** Ghost text at the caret for speech still being recognized; "" removes it. */
+  setDictationPreview: (text: string) => void;
 }
 
 export interface ComposerPromptEditorProps {
@@ -746,6 +748,46 @@ function decorationsForSelection(state: EditorState): DecorationSet {
   return DecorationSet.create(doc, decorations);
 }
 
+const DictationPreviewKey = new PluginKey<string>("composer-dictation-preview");
+
+/** Shows words still being recognized as ghost text at the caret, outside the document and history. */
+const DictationPreviewPlugin = new Plugin<string>({
+  key: DictationPreviewKey,
+  state: {
+    init: () => "",
+    apply: (tr, previous) => {
+      const next: unknown = tr.getMeta(DictationPreviewKey);
+      return typeof next === "string" ? next : previous;
+    },
+  },
+  props: {
+    decorations(state) {
+      const text = DictationPreviewKey.getState(state);
+      if (!text) return null;
+      const head = state.selection.head;
+      const before = head > 0 ? state.doc.textBetween(head - 1, head, "\n", " ") : "";
+      const after =
+        head < state.doc.content.size ? state.doc.textBetween(head, head + 1, "\n", " ") : "";
+      const widget = document.createElement("span");
+      widget.className = "composer-dictation-preview";
+      widget.textContent = `${before && !/\s/.test(before) ? " " : ""}${text}${
+        after && !/\s/.test(after) ? " " : ""
+      }`;
+      widget.setAttribute("aria-hidden", "true");
+      return DecorationSet.create(state.doc, [
+        Decoration.widget(head, widget, { side: 1, key: `dictation-${widget.textContent}` }),
+      ]);
+    },
+  },
+});
+
+const ComposerDictationPreviewExtension = Extension.create({
+  name: "composer-dictation-preview",
+  addProseMirrorPlugins() {
+    return [DictationPreviewPlugin];
+  },
+});
+
 const ComposerMarkersExtension = Extension.create({
   name: "composer-rich-markers",
   addProseMirrorPlugins() {
@@ -843,6 +885,7 @@ function createComposerExtensions(richText: boolean) {
     ComposerCitationExtension,
     ComposerContextReferenceExtension,
     ComposerMarkersExtension,
+    ComposerDictationPreviewExtension,
     ...(richText
       ? [
           ComposerBoldSelectionOnlyExtension,
@@ -1703,6 +1746,13 @@ function ComposerPromptEditorTiptapInner(
         }
       },
       readSnapshot,
+      setDictationPreview: (text) => {
+        if (!editor || editor.isDestroyed) return;
+        if ((DictationPreviewKey.getState(editor.state) ?? "") === text) return;
+        editor.view.dispatch(
+          editor.state.tr.setMeta(DictationPreviewKey, text).setMeta("addToHistory", false),
+        );
+      },
       isCaretOnVisualEdge: (edge) => {
         const snapshot = readSnapshot();
         if (snapshot.value.length === 0) return true;

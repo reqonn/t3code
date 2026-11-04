@@ -311,7 +311,7 @@ export interface ChatComposerHandle {
   openControl: (command: KeybindingCommand) => void;
   isModelPickerOpen: () => boolean;
   isCaretAtStart: () => boolean;
-  toggleDictation: () => void;
+  toggleDictation: (options?: { holdKeyCode?: string }) => void;
   compactContext: () => void;
   readSnapshot: () => {
     value: string;
@@ -2930,7 +2930,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
       compactContext: compactThreadContextStable,
       isModelPickerOpen: () => isComposerModelPickerOpen,
-      toggleDictation: () => dictationButtonRef.current?.toggle(),
+      toggleDictation: (options) => dictationButtonRef.current?.toggle(options),
       isCaretAtStart: () => {
         const range = composerEditorRef.current?.readSelectionRange();
         return range !== undefined && range.start === 0 && range.end === 0;
@@ -3144,6 +3144,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       description: text,
     });
   });
+  const showDictationPreview = useStableCallback((text: string) => {
+    composerEditorRef.current?.setDictationPreview(text);
+  });
   const showDictationError = useStableCallback((message: string) => {
     toastManager.add({ type: "error", title: message });
   });
@@ -3152,7 +3155,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       key={composerDraftTargetKey}
       ref={dictationButtonRef}
       shortcutLabel={shortcutLabelForCommand(keybindings, "composer.dictate")}
-      onTranscript={insertDictatedText}
+      onPreview={showDictationPreview}
+      onCommit={insertDictatedText}
       onError={showDictationError}
     />
   ) : null;

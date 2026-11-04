@@ -72,13 +72,10 @@ async function handle(request: DictationWorkerRequest) {
   }
   const transcriber = await loadTranscriber();
   // transformers.js assumes English unless told otherwise; people usually dictate in their UI language.
+  // Callers send under 30 s, Whisper's window, so no chunking. The token cap bounds a
+  // hallucination loop; 20 s of fast speech is ~100 tokens.
   const transcribe = (language: string) =>
-    transcriber(request.audio, {
-      chunk_length_s: 30,
-      stride_length_s: 5,
-      task: "transcribe",
-      language,
-    });
+    transcriber(request.audio, { task: "transcribe", language, max_new_tokens: 224 });
   const uiLanguage = navigator.language.split("-")[0]?.toLowerCase() || "en";
   const output = await transcribe(uiLanguage).catch((error: unknown) => {
     if (
