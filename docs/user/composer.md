@@ -183,7 +183,8 @@ Click the microphone next to the attach button, or press `mod+shift+d`, and star
 talking. Words appear in grey at your cursor as you speak and settle into text at each
 pause, so one undo removes the last phrase. Click the stop button, press the shortcut
 again, or press `Escape` to stop. Hold the shortcut instead to talk only while it is
-held. Dictation stops on its own after five minutes.
+held. Dictation stops on its own after 15 seconds of silence, keeping your text, and
+after ten minutes at most.
 
 Transcription runs in your browser or the desktop app with a local Whisper model;
 audio never leaves your device. The first use downloads the model once: about

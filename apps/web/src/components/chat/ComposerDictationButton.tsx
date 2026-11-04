@@ -43,7 +43,7 @@ export function ComposerDictationButton({
     status.phase === "idle"
       ? `Dictate${shortcut}. Hold the shortcut to talk, or press it again to stop.`
       : status.phase === "listening"
-        ? `Stop dictation${shortcut}. Esc also stops.`
+        ? `Stop dictation${shortcut}. Esc also stops, and so do 15 seconds of silence.`
         : status.phase === "starting"
           ? "Starting the microphone. Click to cancel."
           : "Finishing the last words. Click to cancel them.";

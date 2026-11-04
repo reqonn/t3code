@@ -59,8 +59,9 @@ export class SpeechSegmenter {
     this.frameEnergy = [];
   }
 
-  private speechThreshold(): number {
-    if (this.frameEnergy.length === 0) return Infinity;
+  /** Energy above which a 20 ms frame counts as speech, relative to this buffer's noise. */
+  speechThreshold(): number {
+    if (this.frameEnergy.length === 0) return 0.01;
     const sorted = this.frameEnergy.toSorted((a, b) => a - b);
     const noiseFloor = sorted[Math.floor(sorted.length * 0.1)] ?? 0;
     return Math.max(0.01, noiseFloor * 3);

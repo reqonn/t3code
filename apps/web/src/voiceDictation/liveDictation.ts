@@ -25,7 +25,9 @@ export type LiveDictationCallbacks = {
   readonly onError: (message: string) => void;
 };
 
-const RECORDING_LIMIT_MS = 5 * 60_000;
+const RECORDING_LIMIT_MS = 10 * 60_000;
+// Like VS Code, a long silence ends dictation and keeps what was said.
+const SILENCE_TIMEOUT_MS = 15_000;
 const PREVIEW_INTERVAL_SAMPLES = SPEECH_SAMPLE_RATE / 2;
 const MIN_PREVIEW_SAMPLES = Math.round(SPEECH_SAMPLE_RATE * 0.6);
 // Whisper's stock output for near-silence; dropped unless a real phrase was spoken.
@@ -49,6 +51,8 @@ export class LiveDictation {
   private inference: Promise<void> | null = null;
   private samplesAtLastPreview = 0;
   private limitTimer: ReturnType<typeof setTimeout> | null = null;
+  private silenceTimer: ReturnType<typeof setInterval> | null = null;
+  private lastSpeechAt = 0;
   private unsubscribeModel: (() => void) | null = null;
   private ended = false;
 
@@ -88,6 +92,10 @@ export class LiveDictation {
       return;
     }
     this.limitTimer = setTimeout(() => void this.stop(), RECORDING_LIMIT_MS);
+    this.lastSpeechAt = performance.now();
+    this.silenceTimer = setInterval(() => {
+      if (performance.now() - this.lastSpeechAt >= SILENCE_TIMEOUT_MS) void this.stop();
+    }, 1000);
     this.setStatus("listening");
   }
 
@@ -121,6 +129,11 @@ export class LiveDictation {
 
   private onAudio(samples: Float32Array) {
     if (this.phase !== "listening" && this.phase !== "starting") return;
+    let sum = 0;
+    for (const sample of samples) sum += sample * sample;
+    if (Math.sqrt(sum / samples.length) > this.segmenter.speechThreshold()) {
+      this.lastSpeechAt = performance.now();
+    }
     this.segmenter.append(samples);
     this.pump();
   }
@@ -200,6 +213,8 @@ export class LiveDictation {
     this.mic = null;
     if (this.limitTimer) clearTimeout(this.limitTimer);
     this.limitTimer = null;
+    if (this.silenceTimer) clearInterval(this.silenceTimer);
+    this.silenceTimer = null;
   }
 
   private finish() {
