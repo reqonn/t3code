@@ -1,4 +1,5 @@
-import workletUrl from "./pcmCapture.worklet.js?url";
+// A small asset would be inlined as a data: URL, which the desktop CSP blocks for worklets.
+import workletUrl from "./pcmCapture.worklet.js?url&no-inline";
 
 export const SPEECH_SAMPLE_RATE = 16_000;
 const MICROPHONE_START_TIMEOUT_MS = 10_000;
