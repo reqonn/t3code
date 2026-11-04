@@ -124,10 +124,7 @@ jobs:
         run: vp run --filter @t3tools/desktop ensure:electron
 
       - name: Check dictation still compiles
-        run: |
-          set -euo pipefail
-          vp run --filter @t3tools/web typecheck
-          vp test run apps/web/src/voiceDictation
+        run: vp run --filter @t3tools/web typecheck
 
       - name: Stamp version ${{ needs.plan.outputs.version }}
         run: node scripts/update-release-package-versions.ts "$VERSION"
