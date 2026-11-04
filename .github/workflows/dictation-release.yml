@@ -130,7 +130,29 @@ jobs:
         run: node scripts/update-release-package-versions.ts "$VERSION"
 
       - name: Download the WSL runtime from ${{ needs.plan.outputs.tag }}
-        run: gh release download "$TAG" -R "$UPSTREAM" -p "t3-*-linux-x64.tar.gz" -D wsl-runtime
+        run: gh release download "$TAG" -R "$UPSTREAM" -p "t3-*-linux-x64.tar.gz" -D wsl-download
+
+      # The build requires the archive's top-level folder to carry the app version.
+      - name: Rename the WSL runtime for this version
+        run: |
+          set -euo pipefail
+          mkdir -p wsl-runtime
+          python - "$(ls wsl-download/t3-*-linux-x64.tar.gz)" "wsl-runtime/t3-$VERSION-linux-x64.tar.gz"             "t3-${TAG#v}-linux-x64" "t3-$VERSION-linux-x64" <<'EOF'
+          import sys, tarfile
+          source, target, old, new = sys.argv[1:]
+          def rename(path):
+              for prefix in (old, "./" + old):
+                  if path == prefix or path.startswith(prefix + "/"):
+                      return new + path[len(prefix):]
+              return path
+          with tarfile.open(source, "r:gz") as src, tarfile.open(target, "w:gz") as dst:
+              for member in src:
+                  data = src.extractfile(member) if member.isfile() else None
+                  member.name = rename(member.name)
+                  if member.islnk():
+                      member.linkname = rename(member.linkname)
+                  dst.addfile(member, data)
+          EOF
 
       - name: Build installer
         run: |
