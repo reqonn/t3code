@@ -1,0 +1,176 @@
+name: Dictation release
+
+# Builds T3 Code's latest stable release with this fork's voice dictation on top and publishes
+# the Windows installer as a release here. Apps installed from these releases update from them.
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      rebuild:
+        description: Build even if this upstream release and fork commit were already released
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths-ignore:
+      - "fork/README.md"
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+
+concurrency:
+  group: dictation-release
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: pingdotgg/t3code
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  plan:
+    name: Check for a new T3 Code release
+    if: github.repository != 'pingdotgg/t3code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      base: ${{ steps.plan.outputs.base }}
+    steps:
+      # GitHub turns off schedules in repositories without activity for 60 days.
+      - name: Keep the schedule enabled
+        if: github.event_name == 'schedule'
+        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/dictation-release.yml/enable"
+
+      - id: plan
+        name: Decide what to build
+        env:
+          REBUILD: ${{ inputs.rebuild == true }}
+        run: |
+          set -euo pipefail
+          tag=$(gh release view -R "$UPSTREAM" --json tagName -q .tagName)
+          version_core=${tag#v}
+          base=$(gh api "repos/$GITHUB_REPOSITORY/compare/pingdotgg:main...$GITHUB_SHA" -q .merge_base_commit.sha)
+          marker="Built from upstream $tag and fork commit $GITHUB_SHA."
+          releases=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | jq --arg prefix "v$version_core-dictation." '[.[] | select(.tag_name | startswith($prefix))]')
+          count=$(jq length <<<"$releases")
+          already=$(jq --arg marker "$marker" 'any(.[]; (.body // "") | contains($marker))' <<<"$releases")
+          build=true
+          if [[ "$already" == "true" && "$REBUILD" != "true" ]]; then
+            build=false
+            echo "Already released $tag with fork commit $GITHUB_SHA."
+          fi
+          {
+            echo "build=$build"
+            echo "tag=$tag"
+            echo "version=$version_core-dictation.$((count + 1))"
+            echo "base=$base"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build Windows installer
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      BASE: ${{ needs.plan.outputs.base }}
+      # Public production values, the same ones every official build ships with.
+      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsudDMuY29kZXMk
+      T3CODE_CLERK_JWT_TEMPLATE: t3-relay
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: hzxSgY2cH10sDU2r
+      T3CODE_RELAY_URL: https://relay.t3.codes
+    steps:
+      - name: Check out T3 Code ${{ needs.plan.outputs.tag }}
+        uses: actions/checkout@v6
+        with:
+          repository: pingdotgg/t3code
+          ref: ${{ needs.plan.outputs.tag }}
+          fetch-depth: 1
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Apply voice dictation
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 "https://github.com/$GITHUB_REPOSITORY" "$GITHUB_SHA"
+          git fetch --no-tags --depth=1 origin "$BASE"
+          git show "$GITHUB_SHA:fork/apply-dictation.mjs" > "$RUNNER_TEMP/apply-dictation.mjs"
+          node "$RUNNER_TEMP/apply-dictation.mjs" --base="$BASE" --feature="$GITHUB_SHA"
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Install dependencies
+        run: vp install --no-frozen-lockfile --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+
+      - name: Install the Electron runtime
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Check dictation still compiles
+        run: |
+          set -euo pipefail
+          vp run --filter @t3tools/web typecheck
+          vp test run apps/web/src/voiceDictation
+
+      - name: Stamp version ${{ needs.plan.outputs.version }}
+        run: node scripts/update-release-package-versions.ts "$VERSION"
+
+      - name: Download the WSL runtime from ${{ needs.plan.outputs.tag }}
+        run: gh release download "$TAG" -R "$UPSTREAM" -p "t3-*-linux-x64.tar.gz" -D wsl-runtime
+
+      - name: Build installer
+        run: |
+          set -euo pipefail
+          vp run dist:desktop:artifact --platform win --target nsis --arch x64 \
+            --build-version "$VERSION" --output-dir release \
+            --wsl-runtime "$(ls "$GITHUB_WORKSPACE"/wsl-runtime/t3-*-linux-x64.tar.gz)" --verbose
+          ls -la release
+
+      - name: Publish release
+        run: |
+          set -euo pipefail
+          notes=$(cat <<EOF
+          T3 Code [$TAG](https://github.com/$UPSTREAM/releases/tag/$TAG) with voice dictation.
+          Installed apps update to this automatically.
+
+          Built from upstream $TAG and fork commit $GITHUB_SHA.
+          EOF
+          )
+          gh release create "v$VERSION" release/*.exe release/*.exe.blockmap release/latest.yml \
+            -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+            --title "T3 Code $VERSION" --notes "$notes"
+
+  report:
+    name: Report a failed build
+    needs: [plan, build]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          set -euo pipefail
+          title="Automatic dictation build failed"
+          body="Building ${{ needs.plan.outputs.tag || 'the latest T3 Code release' }} with voice dictation failed: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. The app keeps working on its current version."
+          issue=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number -q '.[0].number // empty')
+          if [[ -n "$issue" ]]; then
+            gh issue comment "$issue" -R "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi
