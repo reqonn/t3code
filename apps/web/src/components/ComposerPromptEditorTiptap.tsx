@@ -775,7 +775,8 @@ const DictationPreviewPlugin = new Plugin<string>({
       }`;
       widget.setAttribute("aria-hidden", "true");
       return DecorationSet.create(state.doc, [
-        Decoration.widget(head, widget, { side: 1, key: `dictation-${widget.textContent}` }),
+        // Before the caret, so the caret sits at the end of the words as they arrive.
+        Decoration.widget(head, widget, { side: -1, key: `dictation-${widget.textContent}` }),
       ]);
     },
   },
@@ -1040,6 +1041,7 @@ function ComposerPromptEditorTiptapInner(
   const [openCitation, setOpenCitation] = useState<OpenCitationComment | null>(null);
   const citationDraftRef = useRef<{ key: string; comment: string } | null>(null);
   const [isEmpty, setIsEmpty] = useState(value.length === 0);
+  const [hasDictationPreview, setHasDictationPreview] = useState(false);
 
   const citationCommentActions = {
     openComment: openCitation,
@@ -1749,6 +1751,7 @@ function ComposerPromptEditorTiptapInner(
       setDictationPreview: (text) => {
         if (!editor || editor.isDestroyed) return;
         if ((DictationPreviewKey.getState(editor.state) ?? "") === text) return;
+        setHasDictationPreview(text.length > 0);
         editor.view.dispatch(
           editor.state.tr.setMeta(DictationPreviewKey, text).setMeta("addToHistory", false),
         );
@@ -1868,7 +1871,7 @@ function ComposerPromptEditorTiptapInner(
               onCopyCapture={(event) => handleCopyCut(event, false)}
               onCutCapture={(event) => handleCopyCut(event, true)}
             />
-            {isEmpty && contextRecords.size === 0 && placeholder ? (
+            {isEmpty && !hasDictationPreview && contextRecords.size === 0 && placeholder ? (
               <div
                 className={cn(
                   "pointer-events-none absolute inset-0 leading-relaxed text-placeholder",

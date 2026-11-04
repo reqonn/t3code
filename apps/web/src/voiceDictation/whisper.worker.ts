@@ -9,8 +9,6 @@ import ortWasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url
 
 import type { DictationWorkerRequest, DictationWorkerResponse } from "./whisperProtocol";
 
-const MODEL_ID = "onnx-community/whisper-base";
-
 env.allowLocalModels = false;
 // transformers.js loads the ONNX runtime from a CDN, then imports it as a blob: URL. The desktop
 // CSP allows neither, so serve the runtime from our own origin and import it directly.
@@ -24,14 +22,40 @@ function reply(message: DictationWorkerResponse) {
   self.postMessage(message, { transfer: [] });
 }
 
-async function hasWebGpu(): Promise<boolean> {
-  const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
-  if (!gpu) return false;
+type GpuAdapter = { readonly features: ReadonlySet<string> };
+
+async function requestGpuAdapter(): Promise<GpuAdapter | null> {
+  const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<GpuAdapter | null> } })
+    .gpu;
+  if (!gpu) return null;
   try {
-    return (await gpu.requestAdapter()) !== null;
+    return await gpu.requestAdapter();
   } catch {
-    return false;
+    return null;
   }
+}
+
+/**
+ * Large v3 Turbo is far more accurate but needs half-precision GPU shaders to stay fast and its
+ * download near 560 MB; anything less runs Base (about 200 MB on GPU, 80 MB on CPU).
+ */
+async function chooseModel() {
+  const adapter = await requestGpuAdapter();
+  if (adapter?.features.has("shader-f16")) {
+    return {
+      id: "onnx-community/whisper-large-v3-turbo",
+      device: "webgpu",
+      dtype: { encoder_model: "q4f16", decoder_model_merged: "q4f16" },
+    } as const;
+  }
+  // WebGPU needs an fp32 encoder for Base's accuracy; quantized decoders keep the download small.
+  return adapter
+    ? ({
+        id: "onnx-community/whisper-base",
+        device: "webgpu",
+        dtype: { encoder_model: "fp32", decoder_model_merged: "q4" },
+      } as const)
+    : ({ id: "onnx-community/whisper-base", device: "wasm", dtype: "q8" } as const);
 }
 
 function loadTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
@@ -49,11 +73,10 @@ function loadTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
     if (total > 0) reply({ type: "progress", fraction: loaded / total });
   };
   transcriberPromise = (async () => {
-    const webGpu = await hasWebGpu();
-    // Quantized decoders keep the one-time download small; WebGPU needs an fp32 encoder for accuracy.
-    const transcriber = await pipeline("automatic-speech-recognition", MODEL_ID, {
-      device: webGpu ? "webgpu" : "wasm",
-      dtype: webGpu ? { encoder_model: "fp32", decoder_model_merged: "q4" } : "q8",
+    const model = await chooseModel();
+    const transcriber = await pipeline("automatic-speech-recognition", model.id, {
+      device: model.device,
+      dtype: model.dtype,
       progress_callback: onProgress,
     });
     reply({ type: "ready" });

@@ -188,7 +188,9 @@ after ten minutes at most.
 
 Transcription runs in your browser or the desktop app with a local Whisper model;
 audio never leaves your device. The first use downloads the model once: about
-200 MB when your GPU can run it, or 80 MB otherwise. Later uses work offline.
+560 MB for the more accurate model on GPUs with half-precision support (most recent
+NVIDIA, AMD, and Apple GPUs), 200 MB on other GPUs, or 80 MB without one. Later uses
+work offline.
 It uses your interface language when Whisper supports it and English otherwise.
 
 ## Voice input on mobile
