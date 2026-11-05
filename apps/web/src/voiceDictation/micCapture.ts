@@ -76,7 +76,8 @@ export async function startMicCapture(
     audio: {
       channelCount: 1,
       echoCancellation: true,
-      noiseSuppression: true,
+      // Browser noise suppression clips quiet syllables; Whisper copes with noise better on its own.
+      noiseSuppression: false,
       autoGainControl: true,
     },
   });

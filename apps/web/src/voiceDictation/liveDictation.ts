@@ -30,6 +30,8 @@ const RECORDING_LIMIT_MS = 10 * 60_000;
 const SILENCE_TIMEOUT_MS = 15_000;
 const PREVIEW_INTERVAL_SAMPLES = SPEECH_SAMPLE_RATE / 2;
 const MIN_PREVIEW_SAMPLES = Math.round(SPEECH_SAMPLE_RATE * 0.6);
+// Enough recent words to disambiguate a short phrase; Whisper caps the prompt anyway.
+const CONTEXT_CHARS = 300;
 // Whisper's stock output for near-silence; dropped unless a real phrase was spoken.
 const SILENCE_HALLUCINATIONS = new Set(["you", "thank you", "thanks for watching", "bye"]);
 
@@ -50,6 +52,7 @@ export class LiveDictation {
   private mic: MicCapture | null = null;
   private inference: Promise<void> | null = null;
   private samplesAtLastPreview = 0;
+  private committedText = "";
   private limitTimer: ReturnType<typeof setTimeout> | null = null;
   private silenceTimer: ReturnType<typeof setInterval> | null = null;
   private lastSpeechAt = 0;
@@ -164,7 +167,9 @@ export class LiveDictation {
 
   private async preview() {
     this.samplesAtLastPreview = this.segmenter.durationSamples;
-    const text = normalizeDictatedText(await transcribeAudio(this.segmenter.snapshot()));
+    const text = normalizeDictatedText(
+      await transcribeAudio(this.segmenter.snapshot(), this.committedText),
+    );
     if (this.ended || this.phase !== "listening") return;
     this.callbacks.onPreview(isHallucination(text, this.segmenter.speechFrames()) ? "" : text);
   }
@@ -173,10 +178,12 @@ export class LiveDictation {
     const speechFrames = this.segmenter.speechFrames(cut);
     const audio = this.segmenter.take(cut);
     this.samplesAtLastPreview = 0;
-    const text = normalizeDictatedText(await transcribeAudio(audio));
+    const text = normalizeDictatedText(await transcribeAudio(audio, this.committedText));
     if (this.ended) return;
     this.callbacks.onPreview("");
-    if (text.length > 0 && !isHallucination(text, speechFrames)) this.callbacks.onCommit(text);
+    if (text.length === 0 || isHallucination(text, speechFrames)) return;
+    this.committedText = `${this.committedText} ${text}`.slice(-CONTEXT_CHARS);
+    this.callbacks.onCommit(text);
   }
 
   private waitForModel(): Promise<void> {

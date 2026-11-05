@@ -1,8 +1,9 @@
 import { SPEECH_SAMPLE_RATE } from "./micCapture";
 import type { DictationWorkerRequest, DictationWorkerResponse } from "./whisperProtocol";
 
-// The model holds a few hundred MB once loaded; reloading from the browser cache takes seconds.
-const IDLE_WORKER_TIMEOUT_MS = 5 * 60_000;
+// The loaded model holds GPU memory that games and other apps want back; reloading it from the
+// browser cache takes about two seconds, and audio is buffered meanwhile.
+const IDLE_WORKER_TIMEOUT_MS = 60_000;
 
 type PendingTranscription = {
   readonly resolve: (text: string) => void;
@@ -114,7 +115,7 @@ export function subscribeToSpeechModel(listener: (event: SpeechModelEvent) => vo
  * Transcribes 16 kHz mono audio. A pass that outlives its budget restarts the worker, so a
  * wedged GPU or runtime surfaces as an error instead of an endless spinner.
  */
-export function transcribeAudio(audio: Float32Array): Promise<string> {
+export function transcribeAudio(audio: Float32Array, context: string): Promise<string> {
   const id = nextRequestId++;
   const budgetMs = 30_000 + (audio.length / SPEECH_SAMPLE_RATE) * 3_000;
   return new Promise<string>((resolve, reject) => {
@@ -122,7 +123,7 @@ export function transcribeAudio(audio: Float32Array): Promise<string> {
       resetWorker(new Error("The speech model stopped responding, so it was restarted."));
     }, budgetMs);
     pending.set(id, { resolve, reject, timer });
-    const message: DictationWorkerRequest = { type: "transcribe", id, audio };
+    const message: DictationWorkerRequest = { type: "transcribe", id, audio, context };
     ensureWorker().postMessage(message, { transfer: [audio.buffer] });
   });
 }

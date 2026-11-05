@@ -8,6 +8,7 @@ import ortWasmLoaderUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mj
 import ortWasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
 
 import type { DictationWorkerRequest, DictationWorkerResponse } from "./whisperProtocol";
+import { transcribeWithContext } from "./whisperPrompt";
 
 env.allowLocalModels = false;
 // transformers.js loads the ONNX runtime from a CDN, then imports it as a blob: URL. The desktop
@@ -94,13 +95,11 @@ async function handle(request: DictationWorkerRequest) {
     return;
   }
   const transcriber = await loadTranscriber();
-  // transformers.js assumes English unless told otherwise; people usually dictate in their UI language.
-  // Callers send under 30 s, Whisper's window, so no chunking. The token cap bounds a
-  // hallucination loop; 20 s of fast speech is ~100 tokens.
+  // People usually dictate in their UI language. Callers send under 30 s, Whisper's window.
   const transcribe = (language: string) =>
-    transcriber(request.audio, { task: "transcribe", language, max_new_tokens: 224 });
+    transcribeWithContext(transcriber, request.audio, language, request.context);
   const uiLanguage = navigator.language.split("-")[0]?.toLowerCase() || "en";
-  const output = await transcribe(uiLanguage).catch((error: unknown) => {
+  const text = await transcribe(uiLanguage).catch((error: unknown) => {
     if (
       uiLanguage !== "en" &&
       error instanceof Error &&
@@ -110,8 +109,7 @@ async function handle(request: DictationWorkerRequest) {
     }
     throw error;
   });
-  const text = (Array.isArray(output) ? output : [output]).map((chunk) => chunk.text).join(" ");
-  reply({ type: "result", id: request.id, text: text.trim() });
+  reply({ type: "result", id: request.id, text });
 }
 
 self.addEventListener("message", (event: MessageEvent<DictationWorkerRequest>) => {
