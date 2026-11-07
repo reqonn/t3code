@@ -1,12 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 
 import { LiveDictation, type DictationStatus } from "./liveDictation";
+import { playVoiceCue } from "./voiceCues";
 
 export type { DictationPhase, DictationStatus } from "./liveDictation";
 
 const IDLE_STATUS: DictationStatus = { phase: "idle", modelPercent: null };
 // Holding the shortcut at least this long makes releasing it stop dictation (push to talk).
 const HOLD_TO_TALK_MS = 400;
+
+export type DictationToggleOptions = {
+  /** Push to talk: releasing this key after a hold stops dictation. */
+  readonly holdKeyCode?: string;
+  /**
+   * Hands-free (the global F7 key): beeps instead of needing the screen, and calls this once
+   * dictation ends with text inserted, so the caller can send it. Nothing heard: a low buzz.
+   */
+  readonly onHandsFreeDone?: () => void;
+};
 
 export function isDictationSupported(): boolean {
   return (
@@ -29,15 +40,28 @@ export function useVoiceDictation(input: {
   // oxlint-disable-next-line react/refs -- phrases arrive asynchronously and must reach the composer's current handlers
   latestInput.current = input;
 
-  const start = (holdKeyCode?: string) => {
+  const start = (options?: DictationToggleOptions) => {
     if (sessionRef.current) return;
+    const onHandsFreeDone = options?.onHandsFreeDone;
     if (!isDictationSupported()) {
+      if (onHandsFreeDone) playVoiceCue("nothing-heard");
       latestInput.current.onError("Voice dictation isn't supported here.");
       return;
     }
+    let inserted = false;
+    let phase: DictationStatus["phase"] = "idle";
     const session = new LiveDictation({
       onStatus: (next) => {
         if (sessionRef.current !== session) return;
+        if (onHandsFreeDone && next.phase !== phase) {
+          if (next.phase === "listening") playVoiceCue("start");
+          else if (next.phase === "finishing") playVoiceCue("stop");
+          else if (next.phase === "idle") {
+            if (inserted) onHandsFreeDone();
+            else playVoiceCue("nothing-heard");
+          }
+        }
+        phase = next.phase;
         setStatus(next);
         if (next.phase === "idle") {
           sessionRef.current = null;
@@ -48,12 +72,16 @@ export function useVoiceDictation(input: {
         if (sessionRef.current === session) latestInput.current.onPreview(text);
       },
       onCommit: (text) => {
-        if (sessionRef.current === session) latestInput.current.onCommit(text);
+        if (sessionRef.current !== session) return;
+        inserted = true;
+        latestInput.current.onCommit(text);
       },
       onError: (message) => latestInput.current.onError(message),
     });
     sessionRef.current = session;
-    heldKeyRef.current = holdKeyCode ? { code: holdKeyCode, since: performance.now() } : null;
+    heldKeyRef.current = options?.holdKeyCode
+      ? { code: options.holdKeyCode, since: performance.now() }
+      : null;
     void session.start();
   };
 
@@ -61,9 +89,9 @@ export function useVoiceDictation(input: {
   const cancel = () => sessionRef.current?.cancel();
 
   /** Starts, or stops a session that is listening; clicking while it starts or finishes cancels. */
-  const toggle = (options?: { readonly holdKeyCode?: string }) => {
+  const toggle = (options?: DictationToggleOptions) => {
     const session = sessionRef.current;
-    if (!session) start(options?.holdKeyCode);
+    if (!session) start(options);
     else if (session.currentPhase === "listening") void session.stop();
     else session.cancel();
   };

@@ -1,13 +1,16 @@
 import { MicIcon, SquareIcon } from "lucide-react";
 import { useImperativeHandle, type Ref } from "react";
 
-import { useVoiceDictation } from "../../voiceDictation/useVoiceDictation";
+import {
+  useVoiceDictation,
+  type DictationToggleOptions,
+} from "../../voiceDictation/useVoiceDictation";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface ComposerDictationButtonHandle {
-  toggle: (options?: { readonly holdKeyCode?: string }) => void;
+  toggle: (options?: DictationToggleOptions) => void;
 }
 
 export function ComposerDictationButton({

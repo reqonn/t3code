@@ -3,6 +3,10 @@
 This fork is [T3 Code](https://github.com/pingdotgg/t3code) plus voice dictation in the chat
 composer: click the microphone next to the attach button, or press `Ctrl+Shift+D`.
 
+In the desktop app, `F7` works from any window, even a game. Press it, talk, and press it again.
+The message sends to the open chat, and the start of the reply is read aloud. `Ctrl+F7` turns
+`F7` off or back on. See [the composer docs](../docs/user/composer.md#hands-free-voice-with-f7-desktop-app).
+
 ## Updates are automatic
 
 Every six hours, [Dictation release](../.github/workflows/dictation-release.yml) checks for a new

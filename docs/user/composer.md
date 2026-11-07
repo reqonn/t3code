@@ -193,6 +193,22 @@ NVIDIA, AMD, and Apple GPUs), 200 MB on other GPUs, or 80 MB without one. Later 
 work offline.
 It uses your interface language when Whisper supports it and English otherwise.
 
+### Hands-free voice with F7 (desktop app)
+
+Press `F7` from any app, even a full-screen game, and talk into the chat that is open in
+T3 Code. It beeps high when it starts listening. Press `F7` again to stop: it beeps low,
+and the message sends on its own. T3 Code stays in the background. A message sent while
+the agent is busy follows your usual follow-up setting. A low buzz means nothing was heard.
+Dictation still stops after 15 seconds of silence.
+
+When the agent answers a spoken message, the first one or two sentences of its reply are
+read aloud. Typed messages stay quiet. The voice is Kokoro and runs on your device. Its
+first use downloads about 90 MB.
+
+`Ctrl+F7` turns the `F7` key off, with two falling beeps, or back on, with two rising
+beeps. That choice stays after a restart. When `F7` is off or T3 Code is closed, other
+apps get the key as usual.
+
 ## Voice input on mobile
 
 On supported iPhones with iOS 26 or later and Android devices with Android 12 or
