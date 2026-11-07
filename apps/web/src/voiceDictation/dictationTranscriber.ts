@@ -1,9 +1,9 @@
 import { SPEECH_SAMPLE_RATE } from "./micCapture";
 import type { DictationWorkerRequest, DictationWorkerResponse } from "./whisperProtocol";
 
-// The loaded model holds GPU memory that games and other apps want back; reloading it from the
-// browser cache takes about two seconds, and audio is buffered meanwhile.
-const IDLE_WORKER_TIMEOUT_MS = 60_000;
+// The loaded model holds GPU memory that games and other apps want back, but reloading it makes
+// the next dictation slow to finish, so it stays loaded for a while between uses.
+const IDLE_WORKER_TIMEOUT_MS = 10 * 60_000;
 
 type PendingTranscription = {
   readonly resolve: (text: string) => void;

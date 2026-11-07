@@ -2,7 +2,7 @@ import { useEffect, type RefObject } from "react";
 
 import type { ChatComposerHandle } from "../components/chat/ChatComposer";
 import { useStableCallback } from "../hooks/useStableCallback";
-import { speakAloud } from "./speakAloud";
+import { speakAloud, warmUpVoice } from "./speakAloud";
 import { spokenSummary } from "./spokenSummary";
 import { playVoiceCue } from "./voiceCues";
 
@@ -46,6 +46,7 @@ export function useVoiceShortcut(input: {
       started: false,
     });
     composerRef.current?.submit();
+    warmUpVoice();
   });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the desktop app's global voice shortcut

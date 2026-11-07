@@ -8,6 +8,7 @@ export type { DictationPhase, DictationStatus } from "./liveDictation";
 const IDLE_STATUS: DictationStatus = { phase: "idle", modelPercent: null };
 // Holding the shortcut at least this long makes releasing it stop dictation (push to talk).
 const HOLD_TO_TALK_MS = 400;
+const START_CUE_MUTE_MS = 250;
 
 export type DictationToggleOptions = {
   /** Push to talk: releasing this key after a hold stops dictation. */
@@ -54,8 +55,11 @@ export function useVoiceDictation(input: {
       onStatus: (next) => {
         if (sessionRef.current !== session) return;
         if (onHandsFreeDone && next.phase !== phase) {
-          if (next.phase === "listening") playVoiceCue("start");
-          else if (next.phase === "finishing") playVoiceCue("stop");
+          if (next.phase === "listening") {
+            // The mic would hear the beep, and Whisper would try to read it as words.
+            session.ignoreAudioFor(START_CUE_MUTE_MS);
+            playVoiceCue("start");
+          } else if (next.phase === "finishing") playVoiceCue("stop");
           else if (next.phase === "idle") {
             if (inserted) onHandsFreeDone();
             else playVoiceCue("nothing-heard");

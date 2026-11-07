@@ -1,4 +1,6 @@
-export type KokoroWorkerRequest = { readonly id: number; readonly text: string };
+export type KokoroWorkerRequest =
+  | { readonly type: "load" }
+  | { readonly type: "speak"; readonly id: number; readonly text: string };
 
 export type KokoroWorkerResponse =
   | {

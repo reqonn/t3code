@@ -1,7 +1,7 @@
 import type { KokoroWorkerRequest, KokoroWorkerResponse } from "./kokoroProtocol";
 
-// Like the speech-to-text model, the voice is unloaded when idle to give its memory back.
-const IDLE_WORKER_TIMEOUT_MS = 60_000;
+// Unloaded after a while unused to give its memory back; long enough to outlast a typical reply.
+const IDLE_WORKER_TIMEOUT_MS = 10 * 60_000;
 const VOLUME = 0.6;
 
 let worker: Worker | null = null;
@@ -47,18 +47,27 @@ function ensureWorker(): Worker {
   return created;
 }
 
+function scheduleIdleShutdown() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    if (pending.size === 0) stopWorker(new Error("The voice was unloaded."));
+  }, IDLE_WORKER_TIMEOUT_MS);
+}
+
 function render(text: string): Promise<AudioBuffer> {
   const id = nextId++;
   return new Promise<AudioBuffer>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    const request: KokoroWorkerRequest = { id, text };
+    const request: KokoroWorkerRequest = { type: "speak", id, text };
     ensureWorker().postMessage(request, { transfer: [] });
-  }).finally(() => {
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      if (pending.size === 0) stopWorker(new Error("The voice was unloaded."));
-    }, IDLE_WORKER_TIMEOUT_MS);
-  });
+  }).finally(scheduleIdleShutdown);
+}
+
+/** Loads the voice ahead of time, so the reply is read without waiting for it. */
+export function warmUpVoice(): void {
+  const request: KokoroWorkerRequest = { type: "load" };
+  ensureWorker().postMessage(request, { transfer: [] });
+  scheduleIdleShutdown();
 }
 
 async function play(buffer: AudioBuffer): Promise<void> {
@@ -77,7 +86,14 @@ async function play(buffer: AudioBuffer): Promise<void> {
 
 /** Reads text aloud offline with Kokoro. The first use downloads the voice (about 90 MB). */
 export function speakAloud(text: string): Promise<void> {
-  const spoken = queue.then(() => render(text)).then(play);
+  // Each sentence plays while the next one is being made, so speech starts sooner.
+  const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((part) => part.trim()) ?? [text];
+  const spoken = queue.then(async () => {
+    const rendered = sentences.filter(Boolean).map(render);
+    // Sentences after a failed one are dropped; their errors are not worth reporting twice.
+    for (const audio of rendered) audio.catch(() => undefined);
+    for (const audio of rendered) await play(await audio);
+  });
   queue = spoken.catch(() => undefined);
   return spoken;
 }

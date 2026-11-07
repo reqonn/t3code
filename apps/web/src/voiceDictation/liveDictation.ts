@@ -58,6 +58,7 @@ export class LiveDictation {
   private lastSpeechAt = 0;
   private unsubscribeModel: (() => void) | null = null;
   private ended = false;
+  private ignoreAudioUntil = 0;
 
   constructor(callbacks: LiveDictationCallbacks) {
     this.callbacks = callbacks;
@@ -125,6 +126,11 @@ export class LiveDictation {
     this.finish();
   }
 
+  /** Drops microphone audio for a moment, such as while a start beep plays. */
+  ignoreAudioFor(ms: number): void {
+    this.ignoreAudioUntil = performance.now() + ms;
+  }
+
   /** Stops without inserting pending speech. Phrases already committed stay. */
   cancel(): void {
     this.finish();
@@ -132,6 +138,7 @@ export class LiveDictation {
 
   private onAudio(samples: Float32Array) {
     if (this.phase !== "listening" && this.phase !== "starting") return;
+    if (performance.now() < this.ignoreAudioUntil) return;
     let sum = 0;
     for (const sample of samples) sum += sample * sample;
     if (Math.sqrt(sum / samples.length) > this.segmenter.speechThreshold()) {
