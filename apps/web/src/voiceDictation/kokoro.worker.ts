@@ -13,12 +13,13 @@ if (onnxWasm) onnxWasm.wasmPaths = { mjs: ortWasmLoaderUrl, wasm: ortWasmUrl };
 
 // About 90 MB, downloaded once. The CPU keeps the GPU free for whatever else is running.
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
-// Nicole at 1.5x: clear, and quick enough for a summary. Other voices: af_heart, af_bella,
-// am_michael, ... (the VOICES list in kokoro-js).
-const VOICE = "af_nicole";
-const SPEED = 1.5;
+// Heart at 1.2x. Other voices: af_bella, af_sky, af_nova, am_michael, ... (VOICES in kokoro-js).
+const VOICE = "af_heart";
+const SPEED = 1.2;
 
 let ttsPromise: Promise<KokoroTTS> | null = null;
+// The model runs one request at a time.
+let busy: Promise<unknown> = Promise.resolve();
 
 function loadTts(): Promise<KokoroTTS> {
   ttsPromise ??= KokoroTTS.from_pretrained(MODEL_ID, { dtype: "q8", device: "wasm" });
@@ -33,9 +34,17 @@ function reply(message: KokoroWorkerResponse, transfer: Transferable[] = []) {
 }
 
 self.addEventListener("message", (event: MessageEvent<KokoroWorkerRequest>) => {
-  const { id, text } = event.data;
-  loadTts()
-    .then((tts) => tts.generate(text, { voice: VOICE, speed: SPEED }))
+  const request = event.data;
+  if (request.type === "load") {
+    void loadTts().catch(() => undefined);
+    return;
+  }
+  const { id, text } = request;
+  const generated = busy
+    .then(loadTts)
+    .then((tts) => tts.generate(text, { voice: VOICE, speed: SPEED }));
+  busy = generated.catch(() => undefined);
+  generated
     .then((audio) => {
       const samples = audio.data;
       reply({ type: "audio", id, samples, sampleRate: audio.sampling_rate }, [samples.buffer]);
