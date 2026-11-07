@@ -205,7 +205,10 @@ import {
   ComposerDictationButton,
   type ComposerDictationButtonHandle,
 } from "./ComposerDictationButton";
-import { isDictationSupported } from "../../voiceDictation/useVoiceDictation";
+import {
+  isDictationSupported,
+  type DictationToggleOptions,
+} from "../../voiceDictation/useVoiceDictation";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
@@ -311,7 +314,9 @@ export interface ChatComposerHandle {
   openControl: (command: KeybindingCommand) => void;
   isModelPickerOpen: () => boolean;
   isCaretAtStart: () => boolean;
-  toggleDictation: (options?: { holdKeyCode?: string }) => void;
+  toggleDictation: (options?: DictationToggleOptions) => void;
+  /** Sends the draft, as pressing Enter would. */
+  submit: () => void;
   compactContext: () => void;
   readSnapshot: () => {
     value: string;
@@ -2931,6 +2936,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       compactContext: compactThreadContextStable,
       isModelPickerOpen: () => isComposerModelPickerOpen,
       toggleDictation: (options) => dictationButtonRef.current?.toggle(options),
+      submit: () => submitComposerStable(),
       isCaretAtStart: () => {
         const range = composerEditorRef.current?.readSelectionRange();
         return range !== undefined && range.start === 0 && range.end === 0;
